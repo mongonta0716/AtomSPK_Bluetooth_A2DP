@@ -4,12 +4,17 @@
 /// need ESP32-A2DP library. ( URL : https://github.com/pschatzmann/ESP32-A2DP/ )
 #include <BluetoothA2DPSink.h>
 
+#include <Stackchan_servo.h>
+
 /// set M5Speaker virtual channel (0-7)
 static constexpr uint8_t m5spk_virtual_channel = 0;
 
 /// set ESP32-A2DP device name
 static constexpr char bt_device_name[] = "AtomL22_HARO";
 
+StackchanSERVO servo;
+#define SERVO_LOWER_LIMIT 13
+static uint8_t mouth_interval = 200; // msec
 
 class BluetoothA2DPSink_M5Speaker : public BluetoothA2DPSink
 {
@@ -584,7 +589,7 @@ void setup(void)
   cfg.external_speaker.atomic_echo = true;
 
   M5.begin(cfg);
-
+  Serial.begin(115200);
 
   { /// custom setting
     auto spk_cfg = M5.Speaker.config();
@@ -603,13 +608,34 @@ void setup(void)
 
   a2dp_sink.start(bt_device_name, true);
 
+  servo.begin(32, 100, 0, 26, 0, 0, ServoType::SCS); // Feetech SCS0009 servo
+  servo.moveX(SERVO_LOWER_LIMIT, 1000); // move X axis to 0 degree in 3 seconds
+
+  for (int i = 0; i < 3; ++i)
+  {
+    servo.moveX(40, 100); // move X axis to 40 degree in 0.5 seconds
+    servo.moveX(SERVO_LOWER_LIMIT, 200); // move X axis to 40 degree in 0.5 seconds
+  }
   //gfxSetup(&M5.Display);
+  //jservo.moveX(100, 1000); // move X axis to 100 degree in 3 seconds
 }
 
+int volume = 0;
 void loop(void)
 {
   //gfxLoop(&M5.Display);
 
+  //volume = a2dp_sink.get_volume();
+  //Serial.printf("Volume: %d\n", volume);
+  auto buf = a2dp_sink.getBuffer();
+  if (buf) {
+    memcpy(raw_data, buf, WAVE_SIZE * 2 * sizeof(int16_t)); // stereo data copy
+    Serial.printf("Raw data: %d\n", raw_data[150]);
+    long angle = map(abs(raw_data[150]), 0, 3000, SERVO_LOWER_LIMIT, 40);
+    Serial.printf("angle: %d\n", angle);
+    servo.moveX(angle, 1); // move X axis to angle in mouth_interval milliseconds
+    //vTaskDelay(0 / portTICK_PERIOD_MS); // wait for mouth interval
+  }
   {
     static int prev_frame;
     int frame;
@@ -654,6 +680,7 @@ void loop(void)
       M5.Speaker.setVolume(v);
     }
   }
+  
 }
 
 #if !defined ( ARDUINO )
